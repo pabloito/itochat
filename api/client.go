@@ -10,13 +10,13 @@ type Client struct {
     Data   chan []byte
 }
 
-func (client *Client) Receive() {
+func (client *Client) ListenLoop() {
     for {
         message := make([]byte, 4096)
         length, err := client.Socket.Read(message)
         if err != nil {
-            client.Socket.Close()
-            break
+            defer client.Socket.Close()
+            panic("Error in netSocket")
         }
         if length > 0 {
             fmt.Println("RECEIVED: " + string(message))
