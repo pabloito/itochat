@@ -24,14 +24,6 @@ func startServerMode() {
         Unregister: make(chan *api.Client),
     }
     go manager.Start()
-    for {
-        connection, _ := listener.Accept()
-        if error != nil {
-            fmt.Println(error)
-        }
-        client := &api.Client{Socket: connection, Data: make(chan []byte)}
-        manager.Register <- client
-        go manager.Receive(client)
-        go manager.Send(client)
-    }
+    go manager.RegisterLoop(listener)
+	select {}
 }

@@ -6,6 +6,7 @@ package serverlib
 import(
     "fmt"
     "github.com/pabloito/itochat/api"
+    "net"
 )
 
 type ClientManager struct {
@@ -19,51 +20,100 @@ func (manager *ClientManager) Start() {
     for {
         select {
         case connection := <-manager.Register:
-            manager.Clients[connection] = true
-            fmt.Println("Added new connection!")
+            manager.addConection(connection)
         case connection := <-manager.Unregister:
-            if _, ok := manager.Clients[connection]; ok {
-                close(connection.Data)
-                delete(manager.Clients, connection)
-                fmt.Println("A connection has terminated!")
-            }
+            manager.removeConnection(connection)
         case message := <-manager.Broadcast:
-            for connection := range manager.Clients {
-                select {
-                case connection.Data <- message:
-                default:
-                    close(connection.Data)
-                    delete(manager.Clients, connection)
-                }
-            }
+            manager.broadcastMessage(message)
         }
     }
 }
 
-func (manager *ClientManager) Receive(client *api.Client) {
-    for {
-        message := make([]byte, 4096)
-        length, err := client.Socket.Read(message)
-        if err != nil {
-            manager.Unregister <- client
-            client.Socket.Close()
-            break
+func (manager *ClientManager) addConection(connection *api.Client) {
+    manager.Clients[connection] = true
+    fmt.Println("Added new connection!")
+}
+
+func (manager *ClientManager) removeConnection(connection *api.Client) {
+    if _, ok := manager.Clients[connection]; ok {
+        connection.Socket.Close()
+        close(connection.Data)
+        delete(manager.Clients, connection)
+        fmt.Println("A connection has terminated!")
+    }
+}
+func (manager *ClientManager) broadcastMessage(message []byte) {
+    for client := range manager.Clients {
+        select {  //check if client closed
+        case client.Data <- message:
+        default:
+            close(client.Data)
+            delete(manager.Clients, client)
         }
-        if length > 0 {
+    }
+}
+
+func (manager *ClientManager) receiveLoop(client *api.Client) { //todo: terminate connection
+    exit := false
+    for !exit {
+        ok, message := manager.receive(client)
+        if ok {
             fmt.Println("RECEIVED: " + string(message))
             manager.Broadcast <- message
+        }else{
+            fmt.Println("Closing Receive Loop")
+            exit=true
         }
     }
 }
-func (manager *ClientManager) Send(client *api.Client) {
-    defer client.Socket.Close()
-    for {
-        select {
-        case message, ok := <-client.Data:
-            if !ok {
-                return
-            }
+
+func (manager *ClientManager) receive(client *api.Client) (bool,[]byte) {
+    message := make([]byte, 4096)
+    l, err := client.Socket.Read(message)
+    if err != nil {
+        manager.Unregister <- client
+        return false,[]byte("")
+    }
+    return true, message[:l]
+}
+func (manager *ClientManager) sendLoop(client *api.Client) {//todo: terminate connection
+    exit := false
+    for !exit{
+        ok := manager.send(client)
+        if(!ok){
+            fmt.Println("Closing Send Loop")
+            exit = true
+        }
+    }
+}
+func (manager *ClientManager) send(client *api.Client) bool {
+    select {
+    case message, ok := <-client.Data:
+        if ok {
             client.Socket.Write(message)
+            return true
         }
     }
+    return false
 }
+
+func (manager *ClientManager) RegisterLoop(listener net.Listener) {
+    for {
+        manager.register(listener)
+    }
+}
+
+func (manager *ClientManager) register(listener net.Listener) {
+    connection, err := listener.Accept()
+    if err != nil {
+        fmt.Println(err)
+    }
+    client := &api.Client{Socket: connection, Data: make(chan []byte)}
+    manager.Register <- client
+    go manager.receiveLoop(client)
+    go manager.sendLoop(client)
+}
+
+
+
+

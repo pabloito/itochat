@@ -1,13 +1,12 @@
 package main
 
 import (
-	"fmt"
-	"net"
 	"bufio"
-	"strings"
-	"os"
-    "github.com/pabloito/itochat/clientlib"
+	"fmt"
 	"github.com/pabloito/itochat/api"
+	"github.com/pabloito/itochat/clientlib"
+	"net"
+	"os"
 )
 func main(){
 	fmt.Printf("Client\n")
@@ -40,7 +39,11 @@ func writeLoop(client *api.Client){
 func executeCommand(command *lib.Command, client *api.Client) bool{
     switch command.T {
     case lib.Send:
-        client.Socket.Write([]byte(strings.TrimRight(command.Msg, "\n")))
+		_, err := client.Socket.Write([]byte(command.Msg))
+		if err != nil{
+			fmt.Println(err)
+			return false
+		}
         fmt.Printf("message '%s' Sent!\n",command.Msg)
     case lib.Exit:
         fmt.Printf("Exiting program!\n")
